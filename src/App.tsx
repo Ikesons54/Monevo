@@ -7,11 +7,18 @@ import {
   today,
   type Account,
   type AccountType,
+  type AccountMovement,
+  type Category,
+  type Contact,
+  type ContactType,
+  type Obligation,
+  type SharedExpense,
+  type Transfer,
   type Transaction,
   type TransactionType,
 } from './db'
 
-const categories = [
+const defaultCategories = [
   'Food',
   'Transport',
   'Housing',
@@ -79,7 +86,7 @@ const currencies = [
   ['ZAR', 'South African rand'],
 ] as const
 
-type DashboardView = 'overview' | 'accounts' | 'activity'
+type DashboardView = 'overview' | 'accounts' | 'activity' | 'transfers' | 'contacts' | 'obligations' | 'shared-expenses'
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -106,6 +113,17 @@ export default function App() {
         .filter((transaction) => !transaction.voided)
         .sort((a, b) => b.financialDate.localeCompare(a.financialDate))
     }, []) ?? []
+  const categories =
+    useLiveQuery(async () => {
+      const savedCategories = await db.categories.toArray()
+      return savedCategories.filter((category) => !category.archived)
+    }, []) ?? []
+  const movements =
+    useLiveQuery(async () => db.accountMovements.toArray(), []) ?? []
+  const transfers = useLiveQuery(async () => db.transfers.toArray(), []) ?? []
+  const contacts = useLiveQuery(async () => (await db.contacts.toArray()).filter((contact) => !contact.archived), []) ?? []
+  const obligations = useLiveQuery(async () => db.obligations.toArray(), []) ?? []
+  const sharedExpenses = useLiveQuery(async () => db.sharedExpenses.toArray(), []) ?? []
 
   if (profile === undefined) {
     return <div className="loading">Loading Monevo…</div>
@@ -203,6 +221,18 @@ export default function App() {
               >
                 Recent activity
               </button>
+              <button className={activeView === 'transfers' ? 'active' : ''} onClick={() => { setActiveView('transfers'); setMenuOpen(false) }}>
+                Transfers
+              </button>
+              <button className={activeView === 'contacts' ? 'active' : ''} onClick={() => { setActiveView('contacts'); setMenuOpen(false) }}>
+                Contacts
+              </button>
+              <button className={activeView === 'obligations' ? 'active' : ''} onClick={() => { setActiveView('obligations'); setMenuOpen(false) }}>
+                Obligations
+              </button>
+              <button className={activeView === 'shared-expenses' ? 'active' : ''} onClick={() => { setActiveView('shared-expenses'); setMenuOpen(false) }}>
+                Shared expenses
+              </button>
             </nav>
             <div className="side-menu-note">
               <strong>Private by design.</strong>
@@ -221,6 +251,7 @@ export default function App() {
             income={income}
             net={net}
             transactions={transactions}
+            categories={categories}
             onViewActivity={() => setActiveView('activity')}
           />
         )}
@@ -229,7 +260,7 @@ export default function App() {
           <AccountsView
             accounts={accounts}
             currency={currency}
-            transactions={transactions}
+            movements={movements}
           />
         )}
 
@@ -238,8 +269,13 @@ export default function App() {
             accounts={accounts}
             currency={currency}
             transactions={transactions}
+            categories={categories}
           />
         )}
+        {activeView === 'transfers' && <TransfersView accounts={accounts} currency={currency} transfers={transfers} />}
+        {activeView === 'contacts' && <ContactsView contacts={contacts} />}
+        {activeView === 'obligations' && <ObligationsView contacts={contacts} currency={currency} obligations={obligations} />}
+        {activeView === 'shared-expenses' && <SharedExpensesView accounts={accounts} contacts={contacts} currency={currency} sharedExpenses={sharedExpenses} />}
       </main>
     </div>
   )
@@ -275,6 +311,7 @@ function OverviewView({
   income,
   net,
   transactions,
+  categories,
   onViewActivity,
 }: {
   accounts: Account[]
@@ -283,6 +320,7 @@ function OverviewView({
   income: number
   net: number
   transactions: Transaction[]
+  categories: Category[]
   onViewActivity: () => void
 }) {
   return (
@@ -291,7 +329,7 @@ function OverviewView({
         eyebrow={new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }).toUpperCase()}
         title="Understand your money."
         description="A clear, private, local-first view of your financial progress."
-        action={<AddTransactionButton accounts={accounts} />}
+        action={<AddTransactionButton accounts={accounts} categories={categories} />}
       />
       <section className="metrics-grid">
         <Metric label="Income" value={formatCurrency(income, currency)} tone="positive" />
@@ -324,11 +362,11 @@ function OverviewView({
 function AccountsView({
   accounts,
   currency,
-  transactions,
+  movements,
 }: {
   accounts: Account[]
   currency: string
-  transactions: Transaction[]
+  movements: AccountMovement[]
 }) {
   return (
     <>
@@ -344,7 +382,7 @@ function AccountsView({
             <EmptyState message="Add an account to start tracking your money." />
           ) : (
             accounts.map((account) => (
-              <AccountRow key={account.id} account={account} transactions={transactions} currency={currency} />
+              <AccountRow key={account.id} account={account} movements={movements} currency={currency} />
             ))
           )}
         </Panel>
@@ -357,10 +395,12 @@ function ActivityView({
   accounts,
   currency,
   transactions,
+  categories,
 }: {
   accounts: Account[]
   currency: string
   transactions: Transaction[]
+  categories: Category[]
 }) {
   return (
     <>
@@ -368,7 +408,7 @@ function ActivityView({
         eyebrow="YOUR MONEY"
         title="Recent activity"
         description="Review everything you have earned and spent."
-        action={<AddTransactionButton accounts={accounts} />}
+        action={<AddTransactionButton accounts={accounts} categories={categories} />}
       />
       <section className="single-panel">
         <Panel title="Transactions">
@@ -383,6 +423,162 @@ function ActivityView({
       </section>
     </>
   )
+}
+
+function TransfersView({ accounts, currency, transfers }: { accounts: Account[]; currency: string; transfers: Transfer[] }) {
+  return (
+    <>
+      <ViewHeader eyebrow="MOVE MONEY" title="Transfers" description="Move money between your accounts without changing income or spending." action={<AddTransferButton accounts={accounts} />} />
+      <section className="single-panel">
+        <Panel title="Transfer history">
+          {transfers.length === 0 ? <EmptyState message="No transfers yet." /> : transfers.map((transfer) => (
+            <div className="list-row" key={transfer.id}>
+              <div><strong>{accountName(accounts, transfer.fromAccountId)} → {accountName(accounts, transfer.toAccountId)}</strong><small>{transfer.financialDate}{transfer.description ? ` · ${transfer.description}` : ''}</small></div>
+              <strong>{formatCurrency(transfer.amount, currency)}</strong>
+            </div>
+          ))}
+        </Panel>
+      </section>
+    </>
+  )
+}
+
+function ContactsView({ contacts }: { contacts: Contact[] }) {
+  return (
+    <>
+      <ViewHeader eyebrow="PEOPLE & BUSINESSES" title="Contacts" description="Keep merchants, people, and companies connected to your financial records." action={<AddContactButton />} />
+      <section className="single-panel"><Panel title="Saved contacts">
+        {contacts.length === 0 ? <EmptyState message="No contacts yet." /> : contacts.map((contact) => <div className="list-row" key={contact.id}><div><strong>{contact.name}</strong><small>{contact.type}</small></div></div>)}
+      </Panel></section>
+    </>
+  )
+}
+
+function ObligationsView({ contacts, currency, obligations }: { contacts: Contact[]; currency: string; obligations: Obligation[] }) {
+  return (
+    <>
+      <ViewHeader eyebrow="MONEY OWED" title="Obligations" description="Track what others owe you and what you owe them." action={<AddObligationButton contacts={contacts} />} />
+      <section className="single-panel"><Panel title="Open obligations">
+        {obligations.filter((item) => item.status === 'open').length === 0 ? <EmptyState message="No open obligations." /> : obligations.filter((item) => item.status === 'open').map((item) => (
+          <div className="list-row" key={item.id}><div><strong>{contactName(contacts, item.contactId)}</strong><small>{item.direction === 'owed_to_me' ? 'Owes you' : 'You owe'}{item.description ? ` · ${item.description}` : ''}</small></div><strong>{formatCurrency(item.amount, currency)}</strong></div>
+        ))}
+      </Panel></section>
+    </>
+  )
+}
+
+function SharedExpensesView({ accounts, contacts, currency, sharedExpenses }: { accounts: Account[]; contacts: Contact[]; currency: string; sharedExpenses: SharedExpense[] }) {
+  return (
+    <>
+      <ViewHeader eyebrow="SHARED COSTS" title="Shared expenses" description="Record costs paid on behalf of someone else and follow up later." action={<AddSharedExpenseButton accounts={accounts} contacts={contacts} />} />
+      <section className="single-panel"><Panel title="Shared expense history">
+        {sharedExpenses.length === 0 ? <EmptyState message="No shared expenses yet." /> : sharedExpenses.map((item) => <div className="list-row" key={item.id}><div><strong>{contactName(contacts, item.contactId)}</strong><small>{item.description || item.financialDate}</small></div><strong>{formatCurrency(item.amount, currency)}</strong></div>)}
+      </Panel></section>
+    </>
+  )
+}
+
+function AddTransferButton({ accounts }: { accounts: Account[] }) {
+  const [open, setOpen] = useState(false)
+  return <><button className="primary-button" disabled={accounts.length < 2} onClick={() => setOpen(true)}>+ Transfer</button>{open && <TransferModal accounts={accounts} onClose={() => setOpen(false)} />}</>
+}
+
+function TransferModal({ accounts, onClose }: { accounts: Account[]; onClose: () => void }) {
+  const [fromAccountId, setFromAccountId] = useState(accounts[0]?.id ?? '')
+  const [toAccountId, setToAccountId] = useState(accounts[1]?.id ?? '')
+  const [amount, setAmount] = useState('')
+  const [financialDate, setFinancialDate] = useState(today())
+  const [description, setDescription] = useState('')
+  const [error, setError] = useState('')
+  async function save() {
+    const value = Number(amount)
+    if (fromAccountId === toAccountId) return setError('Choose two different accounts.')
+    if (!Number.isFinite(value) || value <= 0) return setError('Enter an amount greater than zero.')
+    if (financialDate > today()) return setError('Transfers cannot be future-dated.')
+    const id = makeId()
+    const cents = Math.round(value * 100)
+    await db.transfers.add({ id, fromAccountId, toAccountId, amount: cents, financialDate, description: description.trim() || null, status: 'completed' })
+    const now = new Date().toISOString()
+    await db.accountMovements.bulkAdd([
+      { id: makeId(), accountId: fromAccountId, amount: -cents, financialDate, eventType: 'transfer', sourceId: id, createdAt: now, reversedBy: null },
+      { id: makeId(), accountId: toAccountId, amount: cents, financialDate, eventType: 'transfer', sourceId: id, createdAt: now, reversedBy: null },
+    ])
+    onClose()
+  }
+  return <Modal title="Transfer money" onClose={onClose}>
+    <label>From<select value={fromAccountId} onChange={(event) => setFromAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+    <label>To<select value={toAccountId} onChange={(event) => setToAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+    <label>Amount<input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
+    <label>Date<input type="date" max={today()} value={financialDate} onChange={(event) => setFinancialDate(event.target.value)} /></label>
+    <label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional" /></label>
+    {error && <p className="error-message">{error}</p>}<button className="primary-button" onClick={save}>Complete transfer</button>
+  </Modal>
+}
+
+function AddContactButton() {
+  const [open, setOpen] = useState(false)
+  return <><button className="primary-button" onClick={() => setOpen(true)}>+ Contact</button>{open && <ContactModal onClose={() => setOpen(false)} />}</>
+}
+
+function ContactModal({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState('')
+  const [type, setType] = useState<ContactType>('person')
+  const [error, setError] = useState('')
+  async function save() {
+    if (!name.trim()) return setError('Enter a contact name.')
+    await db.contacts.add({ id: makeId(), name: name.trim(), type, archived: false })
+    onClose()
+  }
+  return <Modal title="Add contact" onClose={onClose}><label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Alvin or Carrefour" /></label><label>Type<select value={type} onChange={(event) => setType(event.target.value as ContactType)}><option value="person">Person</option><option value="merchant">Merchant</option><option value="company">Company</option><option value="other">Other</option></select></label>{error && <p className="error-message">{error}</p>}<button className="primary-button" onClick={save}>Save contact</button></Modal>
+}
+
+function AddObligationButton({ contacts }: { contacts: Contact[] }) {
+  const [open, setOpen] = useState(false)
+  return <><button className="primary-button" disabled={contacts.length === 0} onClick={() => setOpen(true)}>+ Obligation</button>{open && <ObligationModal contacts={contacts} onClose={() => setOpen(false)} />}</>
+}
+
+function ObligationModal({ contacts, onClose }: { contacts: Contact[]; onClose: () => void }) {
+  const [contactId, setContactId] = useState(contacts[0]?.id ?? '')
+  const [direction, setDirection] = useState<Obligation['direction']>('owed_to_me')
+  const [amount, setAmount] = useState('')
+  const [description, setDescription] = useState('')
+  const [error, setError] = useState('')
+  async function save() {
+    const value = Number(amount)
+    if (!contactId) return setError('Choose a contact.')
+    if (!Number.isFinite(value) || value <= 0) return setError('Enter an amount greater than zero.')
+    await db.obligations.add({ id: makeId(), contactId, amount: Math.round(value * 100), direction, dueDate: null, description: description.trim() || null, status: 'open', createdAt: new Date().toISOString() })
+    onClose()
+  }
+  return <Modal title="Add obligation" onClose={onClose}><label>Contact<select value={contactId} onChange={(event) => setContactId(event.target.value)}>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select></label><label>Direction<select value={direction} onChange={(event) => setDirection(event.target.value as Obligation['direction'])}><option value="owed_to_me">They owe me</option><option value="i_owe">I owe them</option></select></label><label>Amount<input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></label><label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional" /></label>{error && <p className="error-message">{error}</p>}<button className="primary-button" onClick={save}>Save obligation</button></Modal>
+}
+
+function AddSharedExpenseButton({ accounts, contacts }: { accounts: Account[]; contacts: Contact[] }) {
+  const [open, setOpen] = useState(false)
+  return <><button className="primary-button" disabled={accounts.length === 0 || contacts.length === 0} onClick={() => setOpen(true)}>+ Shared expense</button>{open && <SharedExpenseModal accounts={accounts} contacts={contacts} onClose={() => setOpen(false)} />}</>
+}
+
+function SharedExpenseModal({ accounts, contacts, onClose }: { accounts: Account[]; contacts: Contact[]; onClose: () => void }) {
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
+  const [contactId, setContactId] = useState(contacts[0]?.id ?? '')
+  const [amount, setAmount] = useState('')
+  const [description, setDescription] = useState('')
+  const [error, setError] = useState('')
+  async function save() {
+    const value = Number(amount)
+    if (!Number.isFinite(value) || value <= 0) return setError('Enter an amount greater than zero.')
+    await db.sharedExpenses.add({ id: makeId(), accountId, contactId, amount: Math.round(value * 100), description: description.trim() || null, financialDate: today(), status: 'open' })
+    onClose()
+  }
+  return <Modal title="Add shared expense" onClose={onClose}><label>Paid from<select value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>For contact<select value={contactId} onChange={(event) => setContactId(event.target.value)}>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.name}</option>)}</select></label><label>Amount<input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></label><label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional" /></label>{error && <p className="error-message">{error}</p>}<button className="primary-button" onClick={save}>Save shared expense</button></Modal>
+}
+
+function accountName(accounts: Account[], id: string) {
+  return accounts.find((account) => account.id === id)?.name ?? 'Unknown account'
+}
+
+function contactName(contacts: Contact[], id: string) {
+  return contacts.find((contact) => contact.id === id)?.name ?? 'Unknown contact'
 }
 
 function Onboarding() {
@@ -490,7 +686,13 @@ function AddAccountButton() {
   )
 }
 
-function AddTransactionButton({ accounts }: { accounts: Account[] }) {
+function AddTransactionButton({
+  accounts,
+  categories,
+}: {
+  accounts: Account[]
+  categories: Category[]
+}) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -511,6 +713,7 @@ function AddTransactionButton({ accounts }: { accounts: Account[] }) {
       {open && (
         <TransactionModal
           accounts={accounts}
+          categories={categories}
           onClose={() => setOpen(false)}
         />
       )}
@@ -533,18 +736,29 @@ function AccountModal({ onClose }: { onClose: () => void }) {
       return
     }
 
-    if (!Number.isFinite(balance) || balance < 0) {
+    if (!Number.isFinite(balance)) {
       setError('Enter a valid opening balance.')
       return
     }
 
+    const accountId = makeId()
     await db.accounts.add({
-      id: makeId(),
+      id: accountId,
       name: cleanName,
       type,
       openingBalance: Math.round(balance * 100),
       openingBalanceDate: today(),
       archived: false,
+    })
+    await db.accountMovements.add({
+      id: makeId(),
+      accountId,
+      amount: Math.round(balance * 100),
+      financialDate: today(),
+      eventType: 'opening_balance',
+      sourceId: accountId,
+      createdAt: new Date().toISOString(),
+      reversedBy: null,
     })
 
     await db.profiles.update('profile', {
@@ -603,17 +817,25 @@ function AccountModal({ onClose }: { onClose: () => void }) {
 
 function TransactionModal({
   accounts,
+  categories,
   onClose,
 }: {
   accounts: Account[]
+  categories: Category[]
   onClose: () => void
 }) {
   const [type, setType] = useState<TransactionType>('expense')
   const [amount, setAmount] = useState('')
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
-  const [category, setCategory] = useState(categories[0])
+  const [category, setCategory] = useState(categories[0]?.name ?? defaultCategories[0])
+  const [financialDate, setFinancialDate] = useState(today())
+  const [merchant, setMerchant] = useState('')
   const [description, setDescription] = useState('')
+  const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
+  const categoryOptions = categories.length > 0
+    ? categories
+    : defaultCategories.map((name) => ({ id: name, name, archived: false }))
 
   async function saveTransaction() {
     const numericAmount = Number(amount)
@@ -628,15 +850,33 @@ function TransactionModal({
       return
     }
 
+    if (financialDate > today()) {
+      setError('Transactions cannot be dated in the future.')
+      return
+    }
+
+    const transactionId = makeId()
     await db.transactions.add({
-      id: makeId(),
+      id: transactionId,
       type,
       amount: Math.round(numericAmount * 100),
       accountId,
       category: type === 'expense' ? category : null,
-      financialDate: today(),
+      financialDate,
+      merchant: merchant.trim() || null,
       description: description.trim() || null,
+      notes: notes.trim() || null,
       voided: false,
+    })
+    await db.accountMovements.add({
+      id: makeId(),
+      accountId,
+      amount: type === 'income' ? Math.round(numericAmount * 100) : -Math.round(numericAmount * 100),
+      financialDate,
+      eventType: 'transaction',
+      sourceId: transactionId,
+      createdAt: new Date().toISOString(),
+      reversedBy: null,
     })
 
     await db.profiles.update('profile', {
@@ -697,9 +937,9 @@ function TransactionModal({
             value={category}
             onChange={(event) => setCategory(event.target.value)}
           >
-            {categories.map((item) => (
-              <option key={item} value={item}>
-                {item}
+            {categoryOptions.map((item) => (
+              <option key={item.id} value={item.name}>
+                {item.name}
               </option>
             ))}
           </select>
@@ -707,11 +947,39 @@ function TransactionModal({
       )}
 
       <label>
+        Date
+        <input
+          type="date"
+          max={today()}
+          value={financialDate}
+          onChange={(event) => setFinancialDate(event.target.value)}
+        />
+      </label>
+
+      <label>
+        Merchant / person
+        <input
+          value={merchant}
+          onChange={(event) => setMerchant(event.target.value)}
+          placeholder="Optional"
+        />
+      </label>
+
+      <label>
         Description
         <input
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           placeholder="Optional note"
+        />
+      </label>
+
+      <label>
+        Notes
+        <input
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          placeholder="Optional"
         />
       </label>
 
@@ -804,14 +1072,16 @@ function Metric({
 
 function AccountRow({
   account,
-  transactions,
+  movements,
   currency,
 }: {
   account: Account
-  transactions: Transaction[]
+  movements: AccountMovement[]
   currency: string
 }) {
-  const balance = getAccountBalance(account, transactions)
+  const balance = movements
+    .filter((movement) => movement.accountId === account.id && !movement.reversedBy)
+    .reduce((total, movement) => total + movement.amount, 0)
 
   return (
     <div className="list-row">
@@ -857,23 +1127,5 @@ function EmptyState({ message }: { message: string }) {
     <div className="empty-state">
       <p>{message}</p>
     </div>
-  )
-}
-
-function getAccountBalance(
-  account: Account,
-  transactions: Transaction[],
-) {
-  const accountTransactions = transactions.filter(
-    (transaction) => transaction.accountId === account.id,
-  )
-
-  return accountTransactions.reduce(
-    (balance, transaction) =>
-      balance +
-      (transaction.type === 'income'
-        ? transaction.amount
-        : -transaction.amount),
-    account.openingBalance,
   )
 }
