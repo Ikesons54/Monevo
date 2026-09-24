@@ -21,7 +21,69 @@ const categories = [
   'Other',
 ]
 
+const countries = [
+  ['United Arab Emirates', 'AED'],
+  ['Australia', 'AUD'],
+  ['Brazil', 'BRL'],
+  ['Canada', 'CAD'],
+  ['China', 'CNY'],
+  ['Egypt', 'EGP'],
+  ['France', 'EUR'],
+  ['Germany', 'EUR'],
+  ['India', 'INR'],
+  ['Indonesia', 'IDR'],
+  ['Italy', 'EUR'],
+  ['Japan', 'JPY'],
+  ['Kenya', 'KES'],
+  ['Mexico', 'MXN'],
+  ['Netherlands', 'EUR'],
+  ['New Zealand', 'NZD'],
+  ['Nigeria', 'NGN'],
+  ['Pakistan', 'PKR'],
+  ['Philippines', 'PHP'],
+  ['Saudi Arabia', 'SAR'],
+  ['Singapore', 'SGD'],
+  ['South Africa', 'ZAR'],
+  ['South Korea', 'KRW'],
+  ['Spain', 'EUR'],
+  ['Switzerland', 'CHF'],
+  ['Turkey', 'TRY'],
+  ['United Kingdom', 'GBP'],
+  ['United States', 'USD'],
+] as const
+
+const currencies = [
+  ['AED', 'UAE dirham'],
+  ['AUD', 'Australian dollar'],
+  ['BRL', 'Brazilian real'],
+  ['CAD', 'Canadian dollar'],
+  ['CHF', 'Swiss franc'],
+  ['CNY', 'Chinese yuan'],
+  ['EGP', 'Egyptian pound'],
+  ['EUR', 'Euro'],
+  ['GBP', 'British pound'],
+  ['IDR', 'Indonesian rupiah'],
+  ['INR', 'Indian rupee'],
+  ['JPY', 'Japanese yen'],
+  ['KES', 'Kenyan shilling'],
+  ['KRW', 'South Korean won'],
+  ['MXN', 'Mexican peso'],
+  ['NGN', 'Nigerian naira'],
+  ['NZD', 'New Zealand dollar'],
+  ['PHP', 'Philippine peso'],
+  ['PKR', 'Pakistani rupee'],
+  ['SAR', 'Saudi riyal'],
+  ['SGD', 'Singapore dollar'],
+  ['TRY', 'Turkish lira'],
+  ['USD', 'US dollar'],
+  ['ZAR', 'South African rand'],
+] as const
+
+type DashboardView = 'overview' | 'accounts' | 'activity'
+
 export default function App() {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [activeView, setActiveView] = useState<DashboardView>('overview')
   const profile = useLiveQuery(
     async () => {
       const savedProfile = await db.profiles.get('profile')
@@ -78,91 +140,248 @@ export default function App() {
           <div className="wordmark">Monevo</div>
         </div>
 
-        <div className="fwx-tag">Powered by FWXplus</div>
+        <div className="topbar-actions">
+          <div className="fwx-tag">Powered by FWXplus</div>
+          <button
+            className="menu-button"
+            aria-label="Open navigation menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
+        </div>
       </header>
 
-      <main className="content-wrap">
-        <section className="hero-panel">
-          <div>
-            <p className="eyebrow">
-              {new Date().toLocaleString('en-US', {
-                month: 'long',
-                year: 'numeric',
-              }).toUpperCase()}
-            </p>
-
-            <h1>Understand your money.</h1>
-
-            <p className="subtext">
-              Build your future with a clear, private, local-first view of
-              what you earn, spend, owe, and save.
-            </p>
-          </div>
-
-          <AddTransactionButton accounts={accounts} />
-        </section>
-
-        <section className="metrics-grid">
-          <Metric
-            label="Income"
-            value={formatCurrency(income, currency)}
-            tone="positive"
-          />
-
-          <Metric
-            label="Spent"
-            value={formatCurrency(expenses, currency)}
-            tone="negative"
-          />
-
-          <Metric
-            label="Net this month"
-            value={formatCurrency(Math.abs(net), currency)}
-            tone={net >= 0 ? 'positive' : 'negative'}
-            prefix={net >= 0 ? '+' : '-'}
-          />
-
-          <Metric
-            label="Accounts"
-            value={String(accounts.length)}
-          />
-        </section>
-
-        <section className="panel-grid">
-          <Panel title="Accounts" action={<AddAccountButton />}>
-            {accounts.length === 0 ? (
-              <EmptyState message="Add an account to start tracking your money." />
-            ) : (
-              accounts.map((account) => (
-                <AccountRow
-                  key={account.id}
-                  account={account}
-                  transactions={transactions}
-                  currency={currency}
-                />
-              ))
-            )}
-          </Panel>
-
-          <Panel
-            title="Recent activity"
-            action={<AddTransactionButton accounts={accounts} />}
+      {menuOpen && (
+        <div className="side-menu-overlay" onClick={() => setMenuOpen(false)}>
+          <aside
+            className="side-menu"
+            aria-label="Navigation menu"
+            onClick={(event) => event.stopPropagation()}
           >
-            {transactions.length === 0 ? (
-              <EmptyState message="No transactions yet. Add one to start recording activity." />
-            ) : (
-              transactions.slice(0, 8).map((transaction) => (
-                <TransactionRow
-                  key={transaction.id}
-                  transaction={transaction}
-                  currency={currency}
-                />
-              ))
-            )}
-          </Panel>
-        </section>
+            <div className="side-menu-header">
+              <div>
+                <p className="eyebrow tiny">MONEVO</p>
+                <h2>Your workspace</h2>
+              </div>
+              <button
+                className="close-button"
+                aria-label="Close navigation menu"
+                onClick={() => setMenuOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <nav className="side-menu-nav">
+              <button
+                className={activeView === 'overview' ? 'active' : ''}
+                onClick={() => {
+                  setActiveView('overview')
+                  setMenuOpen(false)
+                }}
+              >
+                Overview
+              </button>
+              <button
+                className={activeView === 'accounts' ? 'active' : ''}
+                onClick={() => {
+                  setActiveView('accounts')
+                  setMenuOpen(false)
+                }}
+              >
+                Accounts
+              </button>
+              <button
+                className={activeView === 'activity' ? 'active' : ''}
+                onClick={() => {
+                  setActiveView('activity')
+                  setMenuOpen(false)
+                }}
+              >
+                Recent activity
+              </button>
+            </nav>
+            <div className="side-menu-note">
+              <strong>Private by design.</strong>
+              <p>Your financial data stays stored locally on this device.</p>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      <main className="content-wrap">
+        {activeView === 'overview' && (
+          <OverviewView
+            accounts={accounts}
+            currency={currency}
+            expenses={expenses}
+            income={income}
+            net={net}
+            transactions={transactions}
+            onViewActivity={() => setActiveView('activity')}
+          />
+        )}
+
+        {activeView === 'accounts' && (
+          <AccountsView
+            accounts={accounts}
+            currency={currency}
+            transactions={transactions}
+          />
+        )}
+
+        {activeView === 'activity' && (
+          <ActivityView
+            accounts={accounts}
+            currency={currency}
+            transactions={transactions}
+          />
+        )}
       </main>
     </div>
+  )
+}
+
+function ViewHeader({
+  eyebrow,
+  title,
+  description,
+  action,
+}: {
+  eyebrow: string
+  title: string
+  description: string
+  action?: ReactNode
+}) {
+  return (
+    <section className="view-header">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        <p className="subtext">{description}</p>
+      </div>
+      {action}
+    </section>
+  )
+}
+
+function OverviewView({
+  accounts,
+  currency,
+  expenses,
+  income,
+  net,
+  transactions,
+  onViewActivity,
+}: {
+  accounts: Account[]
+  currency: string
+  expenses: number
+  income: number
+  net: number
+  transactions: Transaction[]
+  onViewActivity: () => void
+}) {
+  return (
+    <>
+      <ViewHeader
+        eyebrow={new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }).toUpperCase()}
+        title="Understand your money."
+        description="A clear, private, local-first view of your financial progress."
+        action={<AddTransactionButton accounts={accounts} />}
+      />
+      <section className="metrics-grid">
+        <Metric label="Income" value={formatCurrency(income, currency)} tone="positive" />
+        <Metric label="Spent" value={formatCurrency(expenses, currency)} tone="negative" />
+        <Metric
+          label="Net this month"
+          value={formatCurrency(Math.abs(net), currency)}
+          tone={net >= 0 ? 'positive' : 'negative'}
+          prefix={net >= 0 ? '+' : '-'}
+        />
+        <Metric label="Accounts" value={String(accounts.length)} />
+      </section>
+      <section className="snapshot-grid">
+        <div className="snapshot-card">
+          <p className="eyebrow tiny">ACCOUNT SNAPSHOT</p>
+          <strong>{accounts.length === 0 ? 'No accounts yet' : `${accounts.length} account${accounts.length === 1 ? '' : 's'}`}</strong>
+          <p>{accounts.length === 0 ? 'Add your first account to see balances here.' : 'Keep your balances organized in one place.'}</p>
+        </div>
+        <div className="snapshot-card">
+          <p className="eyebrow tiny">LATEST ACTIVITY</p>
+          <strong>{transactions.length === 0 ? 'No transactions yet' : transactions[0].description || transactions[0].category || 'Latest transaction'}</strong>
+          <p>{transactions.length === 0 ? 'Your recent activity will appear here.' : `${transactions.length} recorded transaction${transactions.length === 1 ? '' : 's'}`}</p>
+          <button className="text-button" onClick={onViewActivity}>View all activity →</button>
+        </div>
+      </section>
+    </>
+  )
+}
+
+function AccountsView({
+  accounts,
+  currency,
+  transactions,
+}: {
+  accounts: Account[]
+  currency: string
+  transactions: Transaction[]
+}) {
+  return (
+    <>
+      <ViewHeader
+        eyebrow="YOUR MONEY"
+        title="Accounts"
+        description="Track the balances that make up your financial picture."
+        action={<AddAccountButton />}
+      />
+      <section className="single-panel">
+        <Panel title="All accounts">
+          {accounts.length === 0 ? (
+            <EmptyState message="Add an account to start tracking your money." />
+          ) : (
+            accounts.map((account) => (
+              <AccountRow key={account.id} account={account} transactions={transactions} currency={currency} />
+            ))
+          )}
+        </Panel>
+      </section>
+    </>
+  )
+}
+
+function ActivityView({
+  accounts,
+  currency,
+  transactions,
+}: {
+  accounts: Account[]
+  currency: string
+  transactions: Transaction[]
+}) {
+  return (
+    <>
+      <ViewHeader
+        eyebrow="YOUR MONEY"
+        title="Recent activity"
+        description="Review everything you have earned and spent."
+        action={<AddTransactionButton accounts={accounts} />}
+      />
+      <section className="single-panel">
+        <Panel title="Transactions">
+          {transactions.length === 0 ? (
+            <EmptyState message="No transactions yet. Add one to start recording activity." />
+          ) : (
+            transactions.map((transaction) => (
+              <TransactionRow key={transaction.id} transaction={transaction} currency={currency} />
+            ))
+          )}
+        </Panel>
+      </section>
+    </>
   )
 }
 
@@ -211,23 +430,37 @@ function Onboarding() {
         <div className="form-stack">
           <label>
             Country
-            <input
+            <select
               value={country}
-              onChange={(event) => setCountry(event.target.value)}
-              placeholder="Your country"
-            />
+              onChange={(event) => {
+                const selectedCountry = event.target.value
+                setCountry(selectedCountry)
+                const matchingCurrency = countries.find(
+                  ([name]) => name === selectedCountry,
+                )?.[1]
+                if (matchingCurrency) setCurrency(matchingCurrency)
+              }}
+            >
+              {countries.map(([name, code]) => (
+                <option key={name} value={name}>
+                  {name} ({code})
+                </option>
+              ))}
+            </select>
           </label>
 
           <label>
             Primary currency
-            <input
+            <select
               value={currency}
-              maxLength={3}
-              onChange={(event) =>
-                setCurrency(event.target.value.toUpperCase())
-              }
-              placeholder="AED"
-            />
+              onChange={(event) => setCurrency(event.target.value)}
+            >
+              {currencies.map(([code, name]) => (
+                <option key={code} value={code}>
+                  {code} — {name}
+                </option>
+              ))}
+            </select>
           </label>
 
           {error && <p className="error-message">{error}</p>}
@@ -523,14 +756,16 @@ function Modal({
 function Panel({
   title,
   action,
+  id,
   children,
 }: {
   title: string
   action?: ReactNode
+  id?: string
   children: ReactNode
 }) {
   return (
-    <section className="panel">
+    <section className="panel" id={id}>
       <div className="panel-header">
         <div>
           <p className="eyebrow tiny">OVERVIEW</p>
